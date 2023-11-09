@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.15.2
+#       jupytext_version: 1.15.1
 #   kernelspec:
 #     display_name: tillenv
 #     language: python
@@ -58,6 +58,9 @@ dry_df_raw = gpd.read_file(path_to_data +
                           'C_samples_dryland_shp/C_samples_dryland_shp.shp'))
 
 allSamples_df = pd.read_csv(path_to_data + "Carbon&satellite_data_dryIrgted_joined_v1.csv")
+# -
+
+dry_df
 
 # +
 # raw_data['DepthSampled_inches'].value_counts(), dry_df_raw['DepthSampl'].value_counts()
@@ -67,8 +70,6 @@ allSamples_df = pd.read_csv(path_to_data + "Carbon&satellite_data_dryIrgted_join
 # dry_irig_df['SampleID'].isin(dry_df['SampleID']).value_counts()
 # dry_irig_df['DepthSampl'].value_counts()
 # -
-
-len(dry_df['SampleID'].unique())
 
 # check 0_6 -- 0_12 samples' year
 sampleYear_6_12 = dry_df.loc[dry_df['DepthSampl'] ==
@@ -87,9 +88,6 @@ for id in dup_df.SampleID.unique():
     averaged_C.loc[averaged_C["SampleID"] == id, "TotalC"] = np.mean(
         dup_df.loc[dup_df["SampleID"] == id, "TotalC"])
 
-averaged_C.head(5)
-# -
-
 dry_df = dry_df.loc[~dry_df.SampleID.duplicated()]
 dry_df.loc[dry_df.SampleID.isin(averaged_C.SampleID),
         'TotalC'] = averaged_C['TotalC'].values
@@ -98,7 +96,7 @@ dry_df.loc[dry_df['DepthSampl'] == '0_6', 'DepthSampl'] = '0_12'
 dry_df
 
 # +
-# Normalize band values
+# Scalw band values
 largeValue_idx = (dry_df.iloc[:, 11:].describe().loc["min"] < -2) | \
     (dry_df.iloc[:, 8:].describe().loc["max"] > 2)
 largeValue_cols = largeValue_idx[largeValue_idx].index
@@ -117,8 +115,9 @@ dry_df.describe()
 # Convert Total_C_% to g/cm2
 # "total_c_%" /100 * height * A * 2.54 (inch to cm) * BD
 def tCarbon_to_gcm2(df):
-    df.loc[:, "Total_C (g/cm2)"] = df["TotalC"]/100 * 12 * 2.54 * 1 * df["BD_g_cm3"]
-    return df
+    df_copy = df.copy()
+    df_copy.loc[:, "Total_C (g/cm2)"] = df_copy["TotalC"]/100 * 12 * 2.54 * 1 * df_copy["BD_g_cm3"]
+    return df_copy
 tCarbon_to_gcm2(dry_df)
 
 
@@ -175,8 +174,6 @@ plt.show()
 
 # # Create map of data
 
-dry_df
-
 # +
 # Load dry_irrigated dataframe 
 allSamples_df = pd.read_csv(path_to_data + "Carbon&satellite_data_dryIrgted_joined_v1.csv")
@@ -201,11 +198,6 @@ allSamples_df.loc[allSamples_df['DepthSampl'] == '0_6', 'DepthSampl'] = '0_12'
 allSamples_df.loc[allSamples_df['DepthSampl'] == '6_12', 'DepthSampl'] = '0_12'
 allSamples_df
 
-# -
-
-allSamples_df.shape, dry_df.shape
-
-dry_df.columns[dry_df.columns.isin(allSamples_df.columns)]
 
 # +
 
@@ -230,16 +222,12 @@ irrigated_df = allSamples_df.loc[
 irrigated_df['Irrigation'] = 'Irrigated'
 dry_df['Irrigation'] = 'Dryland'
 
-df = pd.concat([dry_df, irrigated_df])
 dry_df = tCarbon_to_gcm2(dry_df)
-# df
-# -
+irrigated_df = tCarbon_to_gcm2(irrigated_df)
 
-(dry_df.columns == irrigated_df.columns)
+df = pd.concat([dry_df, irrigated_df])
 
-len(df['SampleID'].unique())
 
-df['Irrigation'].value_counts()
 
 # +
 ######=====  Sample points grouped by irrigation type  =====#########
@@ -358,6 +346,9 @@ plt.show()
 # +
 ######=====     Distribution of Total C grouped by terciles =====#######
 # Set the terciles to use for separating the data
+
+df = tCarbon_to_gcm2(df)
+
 y_var = "Total_C (g/cm2)"
 bottom_tercile = np.percentile(df[y_var], 33.33)
 top_tercile = np.percentile(df[y_var], 66.66)
@@ -425,10 +416,26 @@ df.columns = df.columns.str.replace('_second', '_JJA')
 df.columns = df.columns.str.replace('_third', '_SON')
 df.to_csv(path_to_data + 'data_snapshot.csv')
 
-df.columns
-
 # +
 ###### ======   Density Distribution of features for top and bottom terciles =====######
+
+
+dataset = dry_df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
+dataset.drop(columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True)
+
+
+# Set the terciles to use for separating the data
+bottom_tercile = dataset[y_var].quantile(1/3)
+top_tercile = dataset[y_var].quantile(2/3)
+
+# Create a new column in the DataFrame to indicate whether each row is in the top, middle, or bottom tercile
+dataset['tercile'] = pd.cut(dataset[y_var], bins=[dataset[y_var].min(
+), bottom_tercile, top_tercile, dataset[y_var].max()], labels=['bottom', 'middle', 'top'], include_lowest=True)
+
+# filter for just top and bottom tercils
+topBottom_df = dataset.loc[dataset['tercile'] != 'middle'].copy()
+topBottom_df['tercile'] = topBottom_df['tercile'].cat.remove_unused_categories()
+
 # Renaming columns
 topBottom_df.columns = topBottom_df.columns.str.replace('_first', '_MAM')
 topBottom_df.columns = topBottom_df.columns.str.replace('_second', '_JJA')
@@ -478,9 +485,12 @@ for fig_num in range(num_figs):
 
 
 # +
-### ==== build OLS ====###
+### ==== build OLS and do cross validation ====###
+import numpy as np
+import statsmodels.api as sm
+from sklearn.model_selection import KFold
 
-dataset = dry_df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
+dataset = irrigated_df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
 dataset.drop(columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True)
 
 # Split the data into dependent and independent variables
@@ -488,107 +498,187 @@ X = dataset.drop(columns=['Total_C (g/cm2)', 'geometry'])
 X = sm.add_constant(X)  # Adding a constant term to the predictor
 y = dataset['Total_C (g/cm2)']
 
-# Ordinary Least Squares (OLS) regression
-model = sm.OLS(y, X).fit()
+# Define the number of splits/folds for cross-validation
+kf = KFold(n_splits=3, shuffle=True, random_state=42)
 
-# Predict using the OLS model
-y_pred = model.predict(X)
+# Store the models and metrics
+models = []
+mse_scores = []
+mae_scores = []
+r2_scores = []
+rmse_scores = []
+percentage_errors = []
 
-# Model Evaluation
-# Calculate residuals
-residuals = y - y_pred
+# Set up the plots for each fold
+fig_hist, axs_hist = plt.subplots(nrows=kf.get_n_splits(), ncols=1, figsize=(10, kf.get_n_splits()*4 +10))
+fig_scat, axs_scat = plt.subplots(nrows=1, ncols=kf.get_n_splits(), figsize=(15, 6.5))
 
-# Mean Absolute Error (MAE)
-mae = np.mean(np.abs(residuals))
+for i, (train_index, test_index) in enumerate(kf.split(X)):
+    # Split your data
+    X_train, X_test = X.iloc[train_index, :], X.iloc[test_index, :]
+    y_train, y_test = y[train_index], y[test_index]
+    
+    # Fit the model
+    model = sm.OLS(y_train, X_train).fit()
+    
+    # Store the model
+    models.append(model)
+    
+    # Predict and evaluate the model
+    y_pred = model.predict(X_test)
+    mse = np.mean((y_pred - y_test)**2)
+    mse_scores.append(mse)
+    
+    # Mean Absolute Error (MAE)
+    residuals = y_test - y_pred
+    mae = np.mean(np.abs(residuals))
+    mae_scores.append(mae)
 
-# R-squared (R^2)
-r2 = model.rsquared
+    # R-squared (R^2)
+    r2 = model.rsquared
+    r2_scores.append(r2)
 
-# Root Mean Squared Error (RMSE)
-rmse = np.sqrt(np.mean(residuals**2))
-
-print(f"Mean Absolute Error (MAE): {mae}")
-print(f"R-squared (R^2): {r2}")
-print(f"Root Mean Squared Error (RMSE): {rmse}")
-
-# Distribution of Percentage Error
-percentage_error = (residuals / y) * 100
-
-# Calculate percetage error with non-zero y
-percentage_error = (np.abs(y[(y != 0)] - y_pred[(y != 0)]) / np.abs(y[(y != 0)]))
-# Replace infinities with NaNs
-percentage_error.replace([np.inf, -np.inf], np.nan, inplace=True)
-
-
-# Get coefficients
-coefficients = model.params
-
-# Drop the constant term
-coefficients = coefficients.drop("const")
-
-# Sort coefficients by magnitude for better interpretation
-sorted_coefficients = coefficients.abs().sort_values(ascending=False)
-
-# Print each feature and its corresponding coefficient
-for feature, coeff in sorted_coefficients.items():
-    print(f"Feature: {feature}, Coefficient: {coeff}")
+    # Root Mean Squared Error (RMSE)
+    rmse = np.sqrt(np.mean(residuals**2))
+    rmse_scores.append(rmse)
 
 
-# plot histograms or other plots to visualize the distribution
-# of the percentage errors
-plt.hist(percentage_error * 100, bins=10)  # Drop NaNs before plotting
-plt.title("Distribution of Percentage Error")
-plt.xlabel("Percentage Error")
-plt.ylabel("Frequency")
-plt.savefig(path_to_plots + "%_err-Dist.png", dpi=300, bbox_inches='tight')
+    # Distribution of Percentage Error for non-zero true values
+    y_test_non_zero = y_test[y_test != 0]
+    y_pred_non_zero = y_pred[y_test != 0]
+    percentage_error = (np.abs(y_test_non_zero - y_pred_non_zero) / np.abs(y_test_non_zero)) * 100
+    percentage_errors.append(percentage_error)
+
+    # Plot histogram of percentage error for the fold
+    axs_hist[i].hist(percentage_error, bins=10, color='blue', alpha=0.7)
+    axs_hist[i].set_title(f"Distribution of Percentage Error - Fold {i+1}")
+    axs_hist[i].set_xlabel("Percentage Error (%)")
+    axs_hist[i].set_ylabel("Frequency")
+
+
+
+
+ # Corrections for scatter plots' axes
+ # Specify the x and y axis limits
+    axs_scat[i].set_xlim([-0.1, 1.2])  # replace x_min and x_max with your desired limits
+    axs_scat[i].set_ylim([-0.1, 1.2])  # replace y_min and y_max with your desired limits
+
+    axs_scat[i].scatter(y_test, y_pred, alpha=0.5)
+    axs_scat[i].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], color='red')  # line of equality
+    axs_scat[i].set_title(f"Observed vs Predicted Values - Fold {i+1}")
+    axs_scat[i].set_xlabel("Actual Total C")
+    axs_scat[i].set_ylabel("Predicted Total C")
+    axs_scat[i].grid(True)
+    axs_scat[i].set_aspect('equal', 'box')
+    # axs_scat[i].savefig(path_to_plots + "y_ypred.png", dpi=300)
+
+
+# # Save the figure with all histograms
+# plt.savefig(path_to_plots + "Percentage_Error_Distributions.png", dpi=300, bbox_inches='tight')
+# plt.subplots_adjust(wspace=3, hspace=2)
+plt.tight_layout(pad=3.0, w_pad=2.0, h_pad=10.0)
+# plt.tight_layout()
 plt.show()
 
+    # Print the summary for each fold's model if needed
+    # print(model.summary())
 
-#################    Spatial Distribution of Percentage Error #######
-dataset['percentage_error'] = percentage_error * 100
+# Average MSE across all folds
+average_mse = np.mean(mse_scores)
+print('Average MSE:', average_mse)
+
+# Average RMSE across all folds
+average_rmse = np.mean(rmse_scores)
+print('Average RMSE:', average_mse)
+
+# Average R2 across all folds
+average_r2 = np.mean(r2_scores)
+print('Average R2:', average_r2)
+
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, BoundaryNorm
+
+# Assuming 'dataset' is your DataFrame and 'wa_state' and 'wa_counties' are GeoDataFrames
+pct_errors = pd.concat([percentage_errors[0], percentage_errors[1],
+                         percentage_errors[2]])
+dataset['percentage_error'] = pct_errors 
+
 # Define the size and axis for the plot
 fig, ax = plt.subplots(figsize=(40, 20))
 wa_state.boundary.plot(ax=ax, linewidth=2)
 wa_counties.boundary.plot(ax=ax, linewidth=1, edgecolor="black")
-wa_counties.apply(lambda x: ax.annotate(
-    text=x.NAME, xy=x.geometry.centroid.coords[0], ha='center', fontsize=20, color='black'), axis=1)
-dataset.plot(column='percentage_error', legend=False, ax=ax, markersize=500, alpha=0.7)
+wa_counties.apply(lambda x: ax.annotate(text=x.NAME, xy=x.geometry.centroid.coords[0], ha='center', fontsize=20, color='black'), axis=1)
+
+# Define the color intervals you want to use
+intervals = np.arange(0,130, 20)  # Define your own intervals
+cmap = ListedColormap(['blue', 'cyan', 'green', 'yellow', 'orange', 'red'])  # Define a colormap with one less color than intervals
+norm = BoundaryNorm(intervals, cmap.N)
+
+# Plot the data using the defined colormap and norm
+dataset.plot(column='percentage_error', cmap=cmap, norm=norm, legend=False, ax=ax, markersize=500, alpha=0.7)
+
 plt.title("Spatial Distribution of Percentage Error", fontsize=32)
 # Adjust the font size of tick labels for longitude and latitude
 ax.tick_params(axis='x', labelsize=18)
 ax.tick_params(axis='y', labelsize=18)
 
-# Create the legend based on the plotted data's colormap
-norm = plt.Normalize(vmin=dataset['percentage_error'].min(
-), vmax=dataset['percentage_error'].max())
-cbar = plt.colorbar(mappable=plt.cm.ScalarMappable(
-    norm=norm, cmap='viridis'), ax=ax, shrink=0.5, pad=0.005)
-cbar.ax.tick_params(labelsize=20)
+# Create the legend manually
+import matplotlib.patches as mpatches
+patchList = []
+for i in range(len(intervals)-1):
+    color = cmap(i / (len(intervals)-1))
+    label_text = f"{intervals[i]} - {intervals[i+1]}%"
+    patchList.append(mpatches.Patch(color=color, label=label_text))
 
-plt.savefig(path_to_plots + "%_err_map.png", dpi=300, bbox_inches='tight')
+ax.legend(handles=patchList, loc='lower center', bbox_to_anchor=(0.5, -0.1), ncol=len(patchList), fontsize=16)
+
+plt.savefig(path_to_plots + "Percentage_Error_Map.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 
-# Scatter plot of y and y_pred
-plt.figure(figsize=(8, 8))
-plt.scatter(y, y_pred, alpha=0.5)
-plt.plot([min(y), max(y)], [min(y), max(y)], color='red')  # line of equality
-plt.title("Observed vs Predicted Values", fontsize=16)
-plt.xlabel("Actual Total C", fontsize=16)
-plt.ylabel("Predicted Predicted Total C", fontsize=16)
-plt.grid(True)
-plt.savefig(path_to_plots + "y_ypred.png", dpi=300)
+
+# # Get coefficients
+# coefficients = model.params
+
+# # Drop the constant term
+# coefficients = coefficients.drop("const")
+
+# # Sort coefficients by magnitude for better interpretation
+# sorted_coefficients = coefficients.abs().sort_values(ascending=False)
+
+# # Print each feature and its corresponding coefficient
+# for feature, coeff in sorted_coefficients.items():
+#     print(f"Feature: {feature}, Coefficient: {coeff}")
+
+# +
+import matplotlib.pyplot as plt
+
+# Create a figure and a grid of subplots
+fig, axs = plt.subplots(2, 2)
+
+# Access each subplot using its index
+axs[0, 0].plot([1, 2, 3], [1, 2, 3]) # top-left
+axs[0, 1].plot([1, 2, 3], [3, 2, 1]) # top-right
+axs[1, 0].plot([1, 2, 3], [2, 3, 1]) # bottom-left
+axs[1, 1].plot([1, 2, 3], [3, 1, 2]) # bottom-right
+
+# Set titles for subplots, if desired
+axs[0, 0].set_title('Top Left')
+axs[0, 1].set_title('Top Right')
+axs[1, 0].set_title('Bottom Left')
+axs[1, 1].set_title('Bottom Right')
+
+# Adjust the layout
+plt.tight_layout()
+
+# Display the plot
 plt.show()
-
-# -
-
-dry_df
-
 
 # +
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
 
@@ -651,10 +741,7 @@ ax.xaxis.set_ticklabels(['bottom', 'top'])
 ax.yaxis.set_ticklabels(['bottom', 'top'])
 plt.savefig(path_to_plots + "CM_bottom_top_test.png", dpi=300)
 plt.show()
-# -
 
-
-df['Total_C (g/cm2)']
 
 # +
 import pandas as pd
@@ -736,495 +823,3 @@ plt.show()
 
 # Print the test score
 print("Test Score:", test_score)
-
-# +
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import cross_val_score
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix
-
-# Load your data into a Pandas DataFrame
-df = df_second[selected_cols]
-
-# Set the name of your y-variable
-y_var = 'Total_C_g/cm2'
-
-# Set the terciles to use for separating the data
-bottom_tercile = np.percentile(df[y_var], 33.33)
-top_tercile = np.percentile(df[y_var], 66.66)
-
-# Subset the DataFrame to include only top and bottom tercile rows
-df_terciles = df[(df[y_var] <= bottom_tercile) |
-                 (df[y_var] >= top_tercile)].copy()
-
-# Create a new column for the target variable ('high' or 'low') based on tercile membership
-df_terciles['target'] = np.where(
-    df_terciles[y_var] >= top_tercile, 'high', 'low')
-
-# Select only the X variables of interest
-# Replace with the actual X variable names
-X_terciles = df_terciles[['NDVI_second', 'tvi_second',
-                          'savi_second', 'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-                          'MSAVI2_second', 'BI_second', 'BI2_second', 'RI_second',
-                          'CI_second', 'B1_second', 'B2_second', 'B3_second',
-                          'B4_second', 'B8_second', 'B11_second', 'B12_second']]
-y_terciles = df_terciles['target']
-
-# from sklearn.model_selection import train_test_split
-
-# # Split the data into training and testing sets
-# X_train, X_test, y_train, y_test = train_test_split(
-#     X_terciles, y_terciles, test_size=0.25, random_state=42)
-
-from sklearn.linear_model import LogisticRegression
-
-# Initialize the classifier
-classifier = LogisticRegression()
-
-# Perform cross-validation
-cv_scores = cross_val_score(classifier, X_terciles, y_terciles, cv=5)
-
-# Print the cross-validation scores
-print("Cross-Validation Scores:", cv_scores)
-print("Average Cross-Validation Score:", np.mean(cv_scores))
-
-# Train the classifier on the entire data
-classifier.fit(X_terciles, y_terciles)
-
-# Make predictions on the testing data
-y_pred = classifier.predict(X_terciles)
-
-# Generate a contingency table
-contingency_table = pd.crosstab(y_terciles, y_pred, rownames=['Actual'], colnames=['Predicted'])
-
-print(contingency_table)
-
-# -
-
-df1 = df.loc[~df.SampleID.duplicated()]
-df1.loc[df1.SampleID.isin(averaged_C.SampleID), 'Total_C_g/cm2'] = averaged_C['Total_C_g/cm2'].values
-df1.loc[df1.SampleID.isin(averaged_C.SampleID), 'Total_C_g/cm2']
-
-df1.columns
-
-# +
-# Normalize band values
-from sklearn.preprocessing import StandardScaler
-# assuming df is your pandas dataframe
-scaler = StandardScaler()
-
-# select the columns you want to normalize
-cols_to_normalize = ['NDVI_first', 'tvi_first',
-       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
-       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
-       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
-       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
-       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
-       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
-       'B8_second', 'B11_second', 'B12_second']
-
-# fit the scaler on the selected columns
-scaler.fit(df[cols_to_normalize])
-
-# transform the selected columns to have zero mean and unit variance
-df[cols_to_normalize] = scaler.transform(df[cols_to_normalize])
-
-# -
-
-df1.iloc[:, 8:]
-
-# +
-import matplotlib.pyplot as plt
-
-# Increase the font size of the labels
-plt.rcParams.update({'font.size': 12})
-
-# Increase the resolution of the plot
-plt.figure(figsize=(12, 8), dpi=300)
-
-# Plot the density distribution of column 'Total_C_g/cm2'
-df1['Total_C_g/cm2'].plot(kind='density')
-
-# Set x-axis label
-plt.xlabel('Total C (g/cm$^2$)', fontsize=14)
-
-# Mark actual values on the curve
-min_value = df1['Total_C_g/cm2'].min()
-max_value = df1['Total_C_g/cm2'].max()
-
-# Plotting the actual values on the curve
-plt.axvline(x=min_value, color='red', linestyle='--', label='Min')
-plt.axvline(x=max_value, color='blue', linestyle='--', label='Max')
-
-# Display legend
-plt.legend(fontsize=12)
-
-# Show the plot
-plt.show()
-
-# -
-
-df_first['Total_C_g/cm2'].describe()
-
-df1.columns
-
-# +
-selected_cols = ['NDVI_first', 'tvi_first',
-       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
-       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
-       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
-       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
-       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
-       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
-       'B8_second', 'B11_second', 'B12_second', 'Total_C_g/cm2']
-
-df = df1[selected_cols]
-df
-# -
-
-df.nunique()[df.nunique() == 1].index[0]
-
-
-
-# +
-import pandas as pd
-import numpy as np
-import seaborn as sns
-
-# Load your data into a Pandas DataFrame
-df = df1[selected_cols].copy()
-
-# Drop columns with just one value
-# df.drop(columns= df.nunique()[df.nunique() == 1].index[0], inplace=True )
-
-# Set the name of your y-variable
-y_var = 'Total_C_g/cm2'
-
-# Set the terciles to use for separating the data
-bottom_tercile = np.percentile(df[y_var], 33.33)
-top_tercile = np.percentile(df[y_var], 66.66)
-
-# Create a new column in the DataFrame to indicate whether each row is in the top, middle, or bottom tercile
-df['tercile'] = pd.cut(df[y_var], bins=[df[y_var].min(
-), bottom_tercile, top_tercile, df[y_var].max()], labels=['bottom', 'middle', 'top'])
-
-# Loop through each x-variable and create a density distribution plot for the top, middle, and bottom terciles
-for x_var in df.columns.drop([y_var, 'tercile']):
-    g = sns.FacetGrid(df[df['tercile'] != 'middle'], hue='tercile', height=4, aspect=1.2)
-    g.map(sns.kdeplot, x_var, shade=True)
-    g.add_legend()
-
-# -
-
-df1.loc[df['tercile'] == 'top']['Total_C_g/cm2'].describe()
-
-# +
-Y = df1['Total_C_g/cm2']
-X = df1[['NDVI_first', 'tvi_first',
-       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
-       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
-       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
-       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
-       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
-       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
-       'B8_second', 'B11_second', 'B12_second']]
-# X = df_second[['B12_second']]
-
-X = sm.add_constant(X)
-
-model = sm.OLS(Y, X).fit()
-print(model.summary())
-
-# +
-import seaborn as sns
-
-# calculate the correlation matrix
-corr_matrix = df[['NDVI_first', 'tvi_first',
-       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
-       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
-       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
-       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
-       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
-       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
-       'B8_second', 'B11_second', 'B12_second']].corr()
-
-
-# plot the correlation matrix as a heatmap
-plt.figure(figsize=(12, 10))
-sns.heatmap(corr_matrix, cmap='coolwarm', annot=True)
-
-# show the plot
-plt.show()
-
-# -
-
-selected_cols = ['NDVI_first', 'tvi_first',
-       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
-       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
-       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
-       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
-       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
-       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
-       'B8_second', 'B11_second', 'B12_second', 'Total_C_g/cm2']
-
-df = df1[selected_cols]
-df.reset_index(inplace=True)
-
-# +
-import pandas as pd
-import numpy as np
-import seaborn as sns
-
-# Load your data into a Pandas DataFrame
-df = df1[selected_cols]
-
-# # Drop columns with just one value
-# df.drop(columns= df.nunique()[df.nunique() == 1].index[0], inplace=True )
-
-# Set the name of your y-variable
-y_var = 'Total_C_g/cm2'
-
-# Set the terciles to use for separating the data
-bottom_tercile = np.percentile(df[y_var], 33.33)
-top_tercile = np.percentile(df[y_var], 66.66)
-
-# Create a new column in the DataFrame to indicate whether each row is in the top, middle, or bottom tercile
-df['tercile'] = pd.cut(df[y_var], bins=[df[y_var].min(
-), bottom_tercile, top_tercile, df[y_var].max()], labels=['bottom', 'middle', 'top'])
-
-# Loop through each x-variable and create a density distribution plot for the top, middle, and bottom terciles
-for x_var in df.columns.drop([y_var, 'tercile']):
-    g = sns.FacetGrid(df[df['tercile'] != 'middle'], hue='tercile', height=4, aspect=1.2)
-    g.map(sns.kdeplot, x_var, shade=True)
-    g.add_legend()
-
-# +
-Y = df_second['Total_C_g/cm2']
-X = df_second[['NDVI_second', 'tvi_second',
-               'savi_second', 'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-               'MSAVI2_second', 'BI_second', 'BI2_second', 'RI_second',
-               'CI_second',
-               'B2_second', 'B3_second', 'B4_second', 'B8_second', 'B11_second',
-               'B12_second']]
-
-X = sm.add_constant(X)
-
-model = sm.OLS(Y, X).fit()
-print(model.summary())
-
-# +
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import cross_val_score
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix
-
-# Load your data into a Pandas DataFrame
-df = df1[selected_cols]
-
-# Set the name of your y-variable
-y_var = 'Total_C_g/cm2'
-
-# Set the terciles to use for separating the data
-bottom_tercile = np.percentile(df[y_var], 33.33)
-top_tercile = np.percentile(df[y_var], 66.66)
-
-# Subset the DataFrame to include only top and bottom tercile rows
-df_terciles = df[(df[y_var] <= bottom_tercile) |
-                 (df[y_var] >= top_tercile)].copy()
-
-# Create a new column for the target variable ('high' or 'low') based on tercile membership
-df_terciles['target'] = np.where(
-    df_terciles[y_var] >= top_tercile, 'high', 'low')
-
-# Select only the X variables of interest
-# Replace with the actual X variable names
-X_terciles = df_terciles[['NDVI_first', 'tvi_first',
-       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
-       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
-       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
-       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
-       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
-       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
-       'B8_second', 'B11_second', 'B12_second']]
-y_terciles = df_terciles['target']
-
-# from sklearn.model_selection import train_test_split
-
-# # Split the data into training and testing sets
-# X_train, X_test, y_train, y_test = train_test_split(
-#     X_terciles, y_terciles, test_size=0.25, random_state=42)
-
-from sklearn.linear_model import LogisticRegression
-
-# Initialize the classifier
-classifier = LogisticRegression()
-
-# Perform cross-validation
-cv_scores = cross_val_score(classifier, X_terciles, y_terciles, cv=5)
-
-# Print the cross-validation scores
-print("Cross-Validation Scores:", cv_scores)
-print("Average Cross-Validation Score:", np.mean(cv_scores))
-
-# Train the classifier on the entire data
-classifier.fit(X_terciles, y_terciles)
-
-# Make predictions on the testing data
-y_pred = classifier.predict(X_terciles)
-
-# Generate a contingency table
-contingency_table = pd.crosstab(y_terciles, y_pred, rownames=['Actual'], colnames=['Predicted'])
-
-print(contingency_table)
-
-# +
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import cross_val_score, train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import confusion_matrix, accuracy_score
-
-# Load your data into a Pandas DataFrame
-df = df1[selected_cols]
-
-# Set the name of your y-variable
-y_var = 'Total_C_g/cm2'
-
-# Set the terciles to use for separating the data
-bottom_tercile = np.percentile(df[y_var], 33.33)
-top_tercile = np.percentile(df[y_var], 66.66)
-
-# Subset the DataFrame to include only top and bottom tercile rows
-df_terciles = df[(df[y_var] <= bottom_tercile) |
-                 (df[y_var] >= top_tercile)].copy()
-
-# Create a new column for the target variable ('high' or 'low') based on tercile membership
-df_terciles['target'] = np.where(
-    df_terciles[y_var] >= top_tercile, 'high', 'low')
-
-# Select only the X variables of interest
-# Replace with the actual X variable names
-X_terciles = df_terciles[['NDVI_first', 'tvi_first',
-       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
-       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
-       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
-       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
-       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
-       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
-       'B8_second', 'B11_second', 'B12_second']]
-y_terciles = df_terciles['target']
-
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(
-    X_terciles, y_terciles, test_size=0.25, random_state=42)
-
-# Initialize the classifier
-classifier = RandomForestClassifier()
-
-# Perform cross-validation
-cv_scores = cross_val_score(classifier, X_train, y_train, cv=3)
-
-# Print the cross-validation scores
-print("Cross-Validation Scores:", cv_scores)
-print("Average Cross-Validation Score:", np.mean(cv_scores))
-
-# Train the classifier on the training data
-classifier.fit(X_train, y_train)
-
-# Make predictions on the testing data
-y_pred = classifier.predict(X_test)
-
-# Calculate the accuracy score
-test_score = accuracy_score(y_test, y_pred)
-
-# Generate a confusion matrix
-conf_matrix = confusion_matrix(y_test, y_pred)
-
-# Create a DataFrame from the confusion matrix
-confusion_df = pd.DataFrame(conf_matrix, index=['Actual low', 'Actual high'], columns=['Predicted low', 'Predicted high'])
-
-# Plot the confusion matrix
-plt.figure(figsize=(8, 6))
-sns.heatmap(confusion_df, annot=True, fmt='d', cmap='Blues')
-plt.title("Confusion Matrix (Test Set)")
-plt.xlabel("Predicted")
-plt.ylabel("Actual")
-plt.show()
-
-# Print the test score
-print("Test Score:", test_score)
-
-# +
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import cross_val_score
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix
-
-# Load your data into a Pandas DataFrame
-df = df_second[selected_cols]
-
-# Set the name of your y-variable
-y_var = 'Total_C_g/cm2'
-
-# Set the terciles to use for separating the data
-bottom_tercile = np.percentile(df[y_var], 33.33)
-top_tercile = np.percentile(df[y_var], 66.66)
-
-# Subset the DataFrame to include only top and bottom tercile rows
-df_terciles = df[(df[y_var] <= bottom_tercile) |
-                 (df[y_var] >= top_tercile)].copy()
-
-# Create a new column for the target variable ('high' or 'low') based on tercile membership
-df_terciles['target'] = np.where(
-    df_terciles[y_var] >= top_tercile, 'high', 'low')
-
-# Select only the X variables of interest
-# Replace with the actual X variable names
-X_terciles = df_terciles[['NDVI_second', 'tvi_second',
-                          'savi_second', 'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
-                          'MSAVI2_second', 'BI_second', 'BI2_second', 'RI_second',
-                          'CI_second', 'B1_second', 'B2_second', 'B3_second',
-                          'B4_second', 'B8_second', 'B11_second', 'B12_second']]
-y_terciles = df_terciles['target']
-
-# from sklearn.model_selection import train_test_split
-
-# # Split the data into training and testing sets
-# X_train, X_test, y_train, y_test = train_test_split(
-#     X_terciles, y_terciles, test_size=0.25, random_state=42)
-
-from sklearn.linear_model import LogisticRegression
-
-# Initialize the classifier
-classifier = LogisticRegression()
-
-# Perform cross-validation
-cv_scores = cross_val_score(classifier, X_terciles, y_terciles, cv=5)
-
-# Print the cross-validation scores
-print("Cross-Validation Scores:", cv_scores)
-print("Average Cross-Validation Score:", np.mean(cv_scores))
-
-# Train the classifier on the entire data
-classifier.fit(X_terciles, y_terciles)
-
-# Make predictions on the testing data
-y_pred = classifier.predict(X_terciles)
-
-# Generate a contingency table
-contingency_table = pd.crosstab(y_terciles, y_pred, rownames=['Actual'], colnames=['Predicted'])
-
-print(contingency_table)
-
