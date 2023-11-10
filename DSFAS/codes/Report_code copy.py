@@ -76,7 +76,7 @@ allSamples_df = pd.read_csv(
 def tCarbon_to_gcm2(df):
     df_copy = df.copy()
     df_copy.loc[:, "Total_C (g/cm2)"] = (
-        df_copy["TotalC"] / 100 * 12 * 2.54 * 1 * df_copy["BD_g_cm3"] *100
+        df_copy["TotalC"] / 100 * 12 * 2.54 * 1 * df_copy["BD_g_cm3"]* 100
     )
     return df_copy
 
@@ -114,6 +114,9 @@ dry_df = dry_df.reset_index(drop=True)
 irrigated_df = tCarbon_to_gcm2(irrigated_df)
 irrigated_df = irrigated_df.reset_index(drop=True)
 df = pd.concat([dry_df, irrigated_df])
+# -
+
+dry_df
 
 # +
 # raw_data['DepthSampled_inches'].value_counts(), dry_df_raw['DepthSampl'].value_counts()
@@ -136,33 +139,33 @@ print("Two-depth samples are for:", f"{sampleYear_6_12}")
 
 
 # +
-# Get average of total_C over 0-6 and 6-12 inches samples
-def averageC(df):
-    dup_df = df.loc[df.SampleID.duplicated(keep=False)]
-    dup_df
+# # Get average of total_C over 0-6 and 6-12 inches samples
+# def averageC(df):
+#     dup_df = df.loc[df.SampleID.duplicated(keep=False)]
+#     dup_df
 
-    averaged_C = pd.DataFrame([])
-    averaged_C["SampleID"] = dup_df.SampleID.unique()
-    for id in dup_df.SampleID.unique():
-        averaged_C.loc[averaged_C["SampleID"] == id, "Total_C (g/cm2)"] = np.mean(
-            dup_df.loc[dup_df["SampleID"] == id, "Total_C (g/cm2)"]
-        )
+#     averaged_C = pd.DataFrame([])
+#     averaged_C["SampleID"] = dup_df.SampleID.unique()
+#     for id in dup_df.SampleID.unique():
+#         averaged_C.loc[averaged_C["SampleID"] == id, "Total_C (g/cm2)"] = np.mean(
+#             dup_df.loc[dup_df["SampleID"] == id, "Total_C (g/cm2)"]
+#         )
 
-    df = df.loc[~df.SampleID.duplicated()]
-    df.loc[df.SampleID.isin(averaged_C.SampleID), "Total_C (g/cm2)"] = averaged_C[
-        "Total_C (g/cm2)"
-    ].values
-    df.loc[df.SampleID.isin(averaged_C.SampleID), "Total_C (g/cm2)"]
-    df.loc[df["DepthSampl"] == "0_6", "DepthSampl"] = "0_12"
-    return df
+#     df = df.loc[~df.SampleID.duplicated()]
+#     df.loc[df.SampleID.isin(averaged_C.SampleID), "Total_C (g/cm2)"] = averaged_C[
+#         "Total_C (g/cm2)"
+#     ].values
+#     df.loc[df.SampleID.isin(averaged_C.SampleID), "Total_C (g/cm2)"]
+#     df.loc[df["DepthSampl"] == "0_6", "DepthSampl"] = "0_12"
+#     return df
 
 
-dry_df = averageC(dry_df)
-irrigated_df = averageC(irrigated_df)
+# dry_df = averageC(dry_df)
+# irrigated_df = averageC(irrigated_df)
 # -
 
-print(dry_df.shape, irrigated_df.shape)
-dry_df
+dry_df = dry_df.loc[dry_df["DepthSampl"] == "0_6"]
+irrigated_df = irrigated_df.loc[irrigated_df["DepthSampl"] == "0_6"]
 
 # +
 # Scale band values
@@ -191,12 +194,16 @@ dry_df = scaleBands(dry_df)
 df = pd.concat([dry_df, irrigated_df])
 # -
 
+df
+
 dry_df = dry_df.loc[~(dry_df["DepthSampl"] == "6_12")]
 irrigated_df = irrigated_df.loc[~(irrigated_df["DepthSampl"] == "6_12")]
 dry_df = dry_df.reset_index(drop=True)
 irrigated_df = irrigated_df.reset_index(drop=True)
 df = pd.concat([dry_df, irrigated_df])
 print(df["DepthSampl"].value_counts())
+
+dry_df
 
 # +
 # DENSITY DISTRIBUTION PLOT FOR ALL YEARS TOGETHER
@@ -239,7 +246,7 @@ for year in dry_df['YearSample'].unique():
     sns.kdeplot(subset['Total_C (g/cm2)'], label=f'Year {year}', fill=True)
 
 # Add labels and title
-plt.xlabel('Total_C (Mg/ha)')
+plt.xlabel('Total_C (g/cm2)')
 plt.ylabel('Density')
 plt.title('Density Distribution of Total C Grouped by Year')
 plt.legend()
@@ -464,72 +471,77 @@ df.columns = df.columns.str.replace('_third', '_SON')
 df.to_csv(path_to_data + 'data_snapshot.csv')
 
 # +
-# ###### ======   Density Distribution of features for top and bottom terciles =====######
+###### ======   Density Distribution of features for top and bottom terciles =====######
 
 
-# dataset = dry_df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
-# dataset.drop(columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True)
+dataset = dry_df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
+dataset.drop(columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True)
 
 
-# # Set the terciles to use for separating the data
-# bottom_tercile = dataset[y_var].quantile(1/3)
-# top_tercile = dataset[y_var].quantile(2/3)
+# Set the terciles to use for separating the data
+bottom_tercile = dataset[y_var].quantile(1/3)
+top_tercile = dataset[y_var].quantile(2/3)
 
-# # Create a new column in the DataFrame to indicate whether each row is in the top, middle, or bottom tercile
-# dataset['tercile'] = pd.cut(dataset[y_var], bins=[dataset[y_var].min(
-# ), bottom_tercile, top_tercile, dataset[y_var].max()], labels=['bottom', 'middle', 'top'], include_lowest=True)
+# Create a new column in the DataFrame to indicate whether each row is in the top, middle, or bottom tercile
+dataset['tercile'] = pd.cut(dataset[y_var], bins=[dataset[y_var].min(
+), bottom_tercile, top_tercile, dataset[y_var].max()], labels=['bottom', 'middle', 'top'], include_lowest=True)
 
-# # filter for just top and bottom tercils
-# topBottom_df = dataset.loc[dataset['tercile'] != 'middle'].copy()
-# topBottom_df['tercile'] = topBottom_df['tercile'].cat.remove_unused_categories()
+# filter for just top and bottom tercils
+topBottom_df = dataset.loc[dataset['tercile'] != 'middle'].copy()
+topBottom_df['tercile'] = topBottom_df['tercile'].cat.remove_unused_categories()
 
-# # Renaming columns
-# topBottom_df.columns = topBottom_df.columns.str.replace('_first', '_MAM')
-# topBottom_df.columns = topBottom_df.columns.str.replace('_second', '_JJA')
-# topBottom_df.columns = topBottom_df.columns.str.replace('_third', '_SON')
-# # Get list of columns to be plotted
-# x_vars = topBottom_df.columns.drop([y_var, 'tercile'])
+# Renaming columns
+topBottom_df.columns = topBottom_df.columns.str.replace('_first', '_MAM')
+topBottom_df.columns = topBottom_df.columns.str.replace('_second', '_JJA')
+topBottom_df.columns = topBottom_df.columns.str.replace('_third', '_SON')
+# Get list of columns to be plotted
+x_vars = topBottom_df.columns.drop([y_var, 'tercile'])
 
-# # Create separate figures for every 20 variables
-# num_plots_per_fig = 20
-# num_figs = -(-len(x_vars) // num_plots_per_fig)  # Ceiling division
+# Create separate figures for every 20 variables
+num_plots_per_fig = 20
+num_figs = -(-len(x_vars) // num_plots_per_fig)  # Ceiling division
 
-# for fig_num in range(num_figs):
-#     fig, axes = plt.subplots(4, 5, figsize=(
-#         20, 16))  # Adjust figsize as needed
-#     axes = axes.ravel()  # Flatten the axes for easier indexing
+for fig_num in range(num_figs):
+    fig, axes = plt.subplots(4, 5, figsize=(
+        20, 16))  # Adjust figsize as needed
+    axes = axes.ravel()  # Flatten the axes for easier indexing
 
-#     for ax_num, x_var in enumerate(x_vars[fig_num*num_plots_per_fig: (fig_num+1)*num_plots_per_fig]):
-#         # Choose your own colors
-#         for tercile, color in zip(['bottom', 'top'], ['#440154', '#21918c']):
-#             subset = topBottom_df[topBottom_df['tercile'] == tercile]
-#             sns.kdeplot(ax=axes[ax_num], data=subset, x=x_var,
-#                         color=color, label=tercile, fill=True)
+    for ax_num, x_var in enumerate(x_vars[fig_num*num_plots_per_fig: (fig_num+1)*num_plots_per_fig]):
+        # Choose your own colors
+        for tercile, color in zip(['bottom', 'top'], ['#440154', '#21918c']):
+            subset = topBottom_df[topBottom_df['tercile'] == tercile]
+            sns.kdeplot(ax=axes[ax_num], data=subset, x=x_var,
+                        color=color, label=tercile, fill=True)
 
-#         # axes[ax_num].set_title(x_var)
-#         # Set font size for x and y labels
-#         axes[ax_num].set_xlabel(x_var, fontsize=15)  # Adjust this value as needed
-#         # Adjust this value as needed
-#         axes[ax_num].set_ylabel('Density', fontsize=15)
-#     # Adjust vertical spacing between subplots
-#     plt.subplots_adjust(hspace=0.5, wspace=0.5)
+        # axes[ax_num].set_title(x_var)
+        # Set font size for x and y labels
+        axes[ax_num].set_xlabel(x_var, fontsize=15)  # Adjust this value as needed
+        # Adjust this value as needed
+        axes[ax_num].set_ylabel('Density', fontsize=15)
+    # Adjust vertical spacing between subplots
+    plt.subplots_adjust(hspace=0.5, wspace=0.5)
     
     
-#     # Handle any unused axes
-#     for ax_num in range(ax_num+1, 20):
-#         axes[ax_num].axis('off')
+    # Handle any unused axes
+    for ax_num in range(ax_num+1, 20):
+        axes[ax_num].axis('off')
     
-#     # Add a legend to the figure (not to each individual plot)
-#     handles, labels = axes[0].get_legend_handles_labels()
-#     fig.legend(handles, labels, title='tercile',
-#                loc='upper right', bbox_to_anchor=(1, 0.5),
-#                prop={'size': 15}, title_fontsize='20')
+    # Add a legend to the figure (not to each individual plot)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, title='tercile',
+               loc='upper right', bbox_to_anchor=(1, 0.5),
+               prop={'size': 15}, title_fontsize='20')
 
 
-#     plot_name = path_to_plots + f"figure_{fig_num + 1}.png"
-#     fig.savefig(plot_name, dpi=300, bbox_inches='tight')
-#     # plt.close(fig)  # Close the current figure to free up memory
+    plot_name = path_to_plots + f"figure_{fig_num + 1}.png"
+    fig.savefig(plot_name, dpi=300, bbox_inches='tight')
+    # plt.close(fig)  # Close the current figure to free up memory
+# -
 
+
+irrigated_df
+
+df
 
 # +
 ### ==== build OLS and do cross validation ====###
@@ -537,9 +549,8 @@ import numpy as np
 import statsmodels.api as sm
 from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score
-
-
-dataset_irr = dry_df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
+df = df.reset_index(drop=True)
+dataset_irr = df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
 dataset_irr.drop(
     columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True
 )
@@ -558,7 +569,7 @@ mse_scores = []
 mae_scores = []
 r2_scores = []
 rmse_scores = []
-percentage_errors_dry = []
+percentage_errors_irrg = []
 
 # Set up the plots for each fold
 fig_hist, axs_hist = plt.subplots(nrows=1, ncols=kf.get_n_splits(), figsize=(15, 5))
@@ -586,9 +597,7 @@ for i, (train_index, test_index) in enumerate(kf.split(X)):
     mae_scores.append(mae)
 
     # R-squared (R^2)
-
     r2 = r2_score(y_test, y_pred)
-
     r2_scores.append(r2)
 
     # Root Mean Squared Error (RMSE)
@@ -601,7 +610,7 @@ for i, (train_index, test_index) in enumerate(kf.split(X)):
     percentage_error = (
         np.abs(y_test_non_zero - y_pred_non_zero) / np.abs(y_test_non_zero)
     ) * 100
-    percentage_errors_dry.append(percentage_error)
+    percentage_errors_irrg.append(percentage_error)
 
     # Plot histogram of percentage error for the fold
     axs_hist[i].hist(percentage_error, bins=10, color="blue", alpha=0.7)
@@ -665,9 +674,6 @@ print("Average R2:", average_r2)
 # # Print each feature and its corresponding coefficient
 # for feature, coeff in sorted_coefficients.items():
 #     print(f"Feature: {feature}, Coefficient: {coeff}")
-# -
-
-r2_scores
 
 # +
 import matplotlib.pyplot as plt
@@ -752,8 +758,7 @@ from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
 
-
-dataset = dry_df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
+dataset = df.loc[:, "NDVI_first":"Total_C (g/cm2)"].copy()
 dataset.drop(
     columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True
 )
@@ -839,8 +844,24 @@ plt.title("Confusion Matrix for bottom and top terciles")
 plt.xlabel("Predicted")
 plt.ylabel("Actual")
 plt.show()
-# -
 
+
+# +
+# Create a DataFrame from the confusion matrix
+confusion_df = pd.DataFrame(
+    cm,
+    index=["Actual low", "Actual high"],
+    columns=["Predicted low", "Predicted high"],
+)
+
+# Plot the confusion matrix
+plt.figure(figsize=(8, 6))
+sns.heatmap(confusion_df, annot=True, fmt="d", cmap="Blues")
+plt.title("Confusion Matrix (Test Set)")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+# -
 
 cm
 
@@ -858,76 +879,42 @@ dataset.drop(columns=["WDVI_third", "Irrigation"], inplace=True)
 df = dataset
 
 # Set the name of your y-variable
-y_var = "Total_C (g/cm2)"
+y_var = 'Total_C (g/cm2)'
 
 # Set the terciles to use for separating the data
 bottom_tercile = np.percentile(df[y_var], 33.33)
 top_tercile = np.percentile(df[y_var], 66.66)
 
 # Subset the DataFrame to include only top and bottom tercile rows
-df_terciles = df[(df[y_var] <= bottom_tercile) | (df[y_var] >= top_tercile)].copy()
+df_terciles = df[(df[y_var] <= bottom_tercile) |
+                 (df[y_var] >= top_tercile)].copy()
 
 # Create a new column for the target variable ('high' or 'low') based on tercile membership
-df_terciles["target"] = np.where(df_terciles[y_var] >= top_tercile, "high", "low")
+df_terciles['target'] = np.where(
+    df_terciles[y_var] >= top_tercile, 'high', 'low')
 
 # Select only the X variables of interest
 # Replace with the actual X variable names
-X_terciles = df_terciles[
-    [
-        "NDVI_first",
-        "tvi_first",
-        "savi_first",
-        "MSI_first",
-        "GNDVI_first",
-        "GRVI_first",
-        "LSWI_first",
-        "MSAVI2_first",
-        "WDVI_first",
-        "BI_first",
-        "BI2_first",
-        "RI_first",
-        "CI_first",
-        "B1_first",
-        "B2_first",
-        "B3_first",
-        "B4_first",
-        "B8_first",
-        "B11_first",
-        "B12_first",
-        "NDVI_second",
-        "tvi_second",
-        "savi_second",
-        "MSI_second",
-        "GNDVI_second",
-        "GRVI_second",
-        "LSWI_second",
-        "MSAVI2_second",
-        "WDVI_second",
-        "BI_second",
-        "BI2_second",
-        "RI_second",
-        "CI_second",
-        "B1_second",
-        "B2_second",
-        "B3_second",
-        "B4_second",
-        "B8_second",
-        "B11_second",
-        "B12_second",
-    ]
-]
-y_terciles = df_terciles["target"]
+X_terciles = df_terciles[['NDVI_first', 'tvi_first',
+       'savi_first', 'MSI_first', 'GNDVI_first', 'GRVI_first', 'LSWI_first',
+       'MSAVI2_first', 'WDVI_first', 'BI_first', 'BI2_first', 'RI_first',
+       'CI_first', 'B1_first', 'B2_first', 'B3_first', 'B4_first', 'B8_first',
+       'B11_first', 'B12_first', 'NDVI_second', 'tvi_second', 'savi_second',
+       'MSI_second', 'GNDVI_second', 'GRVI_second', 'LSWI_second',
+       'MSAVI2_second', 'WDVI_second', 'BI_second', 'BI2_second', 'RI_second',
+       'CI_second', 'B1_second', 'B2_second', 'B3_second', 'B4_second',
+       'B8_second', 'B11_second', 'B12_second']]
+y_terciles = df_terciles['target']
 
 # Split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(
-    X_terciles, y_terciles, test_size=0.5, random_state=42
-)
+    X_terciles, y_terciles, test_size=0.5, random_state=42)
 
 # Initialize the classifier
 classifier = RandomForestClassifier()
 
 # Perform cross-validation
-cv_scores = cross_val_score(classifier, X_train, y_train, cv=4)
+cv_scores = cross_val_score(classifier, X_train, y_train, cv=3)
 
 # Print the cross-validation scores
 print("Cross-Validation Scores:", cv_scores)
@@ -946,23 +933,15 @@ test_score = accuracy_score(y_test, y_pred)
 conf_matrix = confusion_matrix(y_test, y_pred)
 
 # Create a DataFrame from the confusion matrix
-confusion_df = pd.DataFrame(
-    cm,
-    index=["Actual Bottom", "Actual Top"],
-    columns=["Predicted Bottom", "Predicted Top"],
-)
+confusion_df = pd.DataFrame(conf_matrix, index=['Actual low', 'Actual high'], columns=['Predicted low', 'Predicted high'])
 
-# Plot the confusion matrix with the color bar (legend)
+# Plot the confusion matrix
 plt.figure(figsize=(8, 6))
-heatmap = sns.heatmap(confusion_df, annot=False, fmt="d", cmap="Blues", cbar=True)
-
-# Manually annotate each cell
-for i, row in enumerate(cm):
-    for j, value in enumerate(row):
-        color = "white" if value > 20 else "black"  # Choose text color based on value
-        plt.text(j + 0.5, i + 0.5, str(value), ha="center", va="center", color=color)
-
-plt.title("Confusion Matrix for bottom and top terciles")
+sns.heatmap(confusion_df, annot=True, fmt='d', cmap='Blues')
+plt.title("Confusion Matrix (Test Set)")
 plt.xlabel("Predicted")
 plt.ylabel("Actual")
 plt.show()
+
+# Print the test score
+print("Test Score:", test_score)
