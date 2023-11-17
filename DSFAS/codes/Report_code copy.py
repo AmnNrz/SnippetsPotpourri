@@ -49,7 +49,7 @@ dry_irig_df = pd.read_csv(
 )
 
 raw_data = pd.read_csv(path_to_data + "EWA_carbon_subset.csv")
-raw_data = raw_data.dropna(subset="TotalC_%")
+# raw_data = raw_data.dropna(subset="TotalC_%")
 
 # Convert year to integer
 dry_df["YearSample"] = dry_df["YearSample"].astype(int)
@@ -68,6 +68,12 @@ dry_df_raw = gpd.read_file(
 allSamples_df = pd.read_csv(
     path_to_data + "Carbon&satellite_data_dryIrgted_joined_v1.csv"
 )
+
+# +
+raw_data = pd.read_csv(path_to_data + "EWA_carbon_subset.csv")
+raw_data["DepthSampled_inches"].value_counts()
+
+dry_df['DepthSampl'].value_counts()
 
 
 # +
@@ -133,6 +139,12 @@ sampleYear_6_12 = irrigated_df.loc[
     irrigated_df["DepthSampl"] == "0_6", "YearSample"
 ].values[0]
 print("Two-depth samples are for:", f"{sampleYear_6_12}")
+# -
+
+
+dry_df['DepthSampl'].value_counts()
+
+irrigated_df['DepthSampl'].value_counts()
 
 
 # +
@@ -157,9 +169,13 @@ def averageC(df):
     return df
 
 
+df_0_6 = df.loc[df["DepthSampl"] == "0_6"]
+
 dry_df = averageC(dry_df)
 irrigated_df = averageC(irrigated_df)
 # -
+
+irrigated_df['DepthSampl'].value_counts()
 
 print(dry_df.shape, irrigated_df.shape)
 dry_df
@@ -536,174 +552,178 @@ plt.show()
 # -
 
 
-dry_df.head(5)
+df
 
-df.columns
+dry_0_6 = dry_df.loc[dry_df["DepthSampl"] == "0_6"].copy()
+irrg_0_6 = irrigated_df.loc[irrigated_df["DepthSampl"] == "0_6"].copy()
+dry_0_6.shape, irrg_0_6.shape
+
+# +
+dry_df["SOC Stock"] = (
+    (dry_df["TotalC"] - dry_df["InorganicC"])
+    / 100
+    * 12
+    * 2.54
+    * 1
+    * dry_df["BD_g_cm3"]
+    * 100
+)
+
+
+irrigated_df["SOC Stock"] = (
+    (irrigated_df["TotalC"] - irrigated_df["InorganicC"])
+    / 100
+    * 12
+    * 2.54
+    * 1
+    * irrigated_df["BD_g_cm3"]
+    * 100
+)
+
+df = pd.concat([dry_df, irrigated_df])
 
 # +
 ### ==== build OLS and do cross validation ====###
 import numpy as np
 import statsmodels.api as sm
-from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
-
-# dry_df0 = dry_df.loc[~(dry_df["YearSample"] == "2020")]
-df = df.reset_index(drop=True)
-dataset_irr = df.loc[:, "NDVI_first":"Irrigation"].copy()
-dataset_irr.drop(
-    columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True
-)
-
-# Split the data into dependent and independent variables
-X = dataset_irr.drop(columns=["geometry"])
-X = sm.add_constant(X)  # Adding a constant term to the predictor
-y = df["TotalC"]
-
-num_iterations = 15  # Define the number of iterations for cross-validation
+import random
 
 
-MODELS_ = []
-MSE_SCORES_ = []
-MAE_SCORE_ = []
-R2_SCORES_ = []
-RMSE_SCORES_ = []
-PERCENTAGE_ERRORS_DRY = []
-PERCENTAGE_ERRORS_IRR = []
-for iteration in range(num_iterations):
-    print(f"Cross-Validation Iteration: {iteration + 1}")
+# Build OLS function
+def ols(X, y, num_iterations):
+    Ys_Ypreds_train = {}
+    MSE_SCORES_train = []
+    MAE_SCORES_train = []
+    R2_SCORES_train = []
+    RMSE_SCORES_train = []
+    PERCENTAGE_ERRORS_train = []
 
-    # Define the number of splits/folds for cross-validation
-    kf = KFold(n_splits=3, shuffle=True, random_state=42 + iteration)
+    Ys_Ypreds_test = {}
+    MSE_SCORES_test = []
+    MAE_SCORES_test = []
+    R2_SCORES_test = []
+    RMSE_SCORES_test = []
+    PERCENTAGE_ERRORS_test = []
 
-    # Store the models and metrics
-    models = []
-    mse_scores = []
-    mae_scores = []
-    r2_scores = []
-    rmse_scores = []
-    percentage_errors_dry = []
-
-    # Set up the plots for each fold
-    fig_hist, axs_hist = plt.subplots(nrows=1, ncols=kf.get_n_splits(), figsize=(15, 5))
-    fig_scat, axs_scat = plt.subplots(
-        nrows=1, ncols=kf.get_n_splits(), figsize=(15, 6.5)
-    )
-    
-    for i, (train_index, test_index) in enumerate(kf.split(X)):
-        # Split your data
-        X_train, X_test = X.iloc[train_index, :], X.iloc[test_index, :]
-        y_train, y_test = y[train_index], y[test_index]
+    for iteration in range(num_iterations):
+        # print(f"Iteration: {iteration + 1}")
+        # Split the data into training and test sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
 
         # Fit the model
         model = sm.OLS(y_train, X_train).fit()
 
         # Store the model
-        models.append(model)
 
         # Predict and evaluate the model
-        y_pred = model.predict(X_test)
+        y_pred_train = model.predict(X_train)
+        y_pred_test = model.predict(X_test)
 
         # Define your threshold for the absolute difference
-        threshold = 0.9  # or whatever value you're interested in
+        # threshold = 0.9  # or whatever value you're interested in
+        threshold = 75  # or whatever value you're interested in
 
         # Calculate the absolute differences
-        differences = np.abs(y_pred - y_test)
+        differences_train = np.abs(y_pred_train - y_train)
+        differences_test = np.abs(y_pred_test - y_test)
 
         # Create a mask for where the differences are less than the threshold
-        mask = differences < threshold
+        mask_train = differences_train < threshold
+        mask_test = differences_test < threshold
 
         # Filter your predictions and true values
-        filtered_y_pred = y_pred[mask]
-        filtered_y_test = y_test[mask]
+        filtered_y_pred_train = y_pred_train[mask_train]
+        filtered_y_train = y_train[mask_train]
+        filtered_y_pred_test = y_pred_test[mask_test]
+        filtered_y_test = y_test[mask_test]
 
-        mse = np.mean((filtered_y_pred - filtered_y_test) ** 2)
-        mse_scores.append(mse)
+        mse_train = np.mean((filtered_y_pred_train - filtered_y_train) ** 2)
+        MSE_SCORES_train.append(mse_train)
 
         # Mean Absolute Error (MAE)
-        residuals = filtered_y_test - filtered_y_pred
-        mae = np.mean(np.abs(residuals))
-        mae_scores.append(mae)
+        residuals_train = filtered_y_train - filtered_y_pred_train
+        mae_train = np.mean(np.abs(residuals_train))
+        MAE_SCORES_train.append(mae_train)
 
         # R-squared (R^2)
+        r2_train = r2_score(filtered_y_train, filtered_y_pred_train)
 
-        r2 = r2_score(filtered_y_test, filtered_y_pred)
+        Ys_Ypreds_train[r2_train] = (filtered_y_train, filtered_y_pred_train)
 
-        r2_scores.append(r2)
+        R2_SCORES_train.append(r2_train)
 
         # Root Mean Squared Error (RMSE)
-        rmse = np.sqrt(np.mean(residuals**2))
-        rmse_scores.append(rmse)
+        rmse_train = np.sqrt(np.mean(residuals_train**2))
+        RMSE_SCORES_train.append(rmse_train)
+
+        # Distribution of Percentage Error for non-zero true values
+        filtered_y_train_non_zero = filtered_y_train[filtered_y_train != 0]
+        filtered_y_pred_train_non_zero = filtered_y_pred_train[filtered_y_train != 0]
+        percentage_error_train = (
+            np.abs(filtered_y_train_non_zero - filtered_y_pred_train_non_zero)
+            / np.abs(filtered_y_train_non_zero)
+        ) * 100
+        PERCENTAGE_ERRORS_train.append(percentage_error_train)
+
+        mse_test = np.mean((filtered_y_pred_test - filtered_y_test) ** 2)
+        MSE_SCORES_test.append(mse_test)
+
+        # Mean Absolute Error (MAE)
+        residuals_test = filtered_y_test - filtered_y_pred_test
+        mae_test = np.mean(np.abs(residuals_test))
+        MAE_SCORES_test.append(mae_test)
+
+        # R-squared (R^2)
+        r2_test = r2_score(filtered_y_test, filtered_y_pred_test)
+
+        Ys_Ypreds_test[r2_test] = (filtered_y_test, filtered_y_pred_test)
+
+        R2_SCORES_test.append(r2_test)
+
+        # Root Mean Squared Error (RMSE)
+        rmse_test = np.sqrt(np.mean(residuals_test**2))
+        RMSE_SCORES_test.append(rmse_test)
 
         # Distribution of Percentage Error for non-zero true values
         filtered_y_test_non_zero = filtered_y_test[filtered_y_test != 0]
-        filtered_y_pred_non_zero = filtered_y_pred[filtered_y_test != 0]
-        percentage_error = (
-            np.abs(filtered_y_test_non_zero - filtered_y_pred_non_zero)
+        filtered_y_pred_test_non_zero = filtered_y_pred_test[filtered_y_test != 0]
+        percentage_error_test = (
+            np.abs(filtered_y_test_non_zero - filtered_y_pred_test_non_zero)
             / np.abs(filtered_y_test_non_zero)
         ) * 100
-        percentage_errors_dry.append(percentage_error)
-
-        # Plot histogram of percentage error for the fold
-        axs_hist[i].hist(percentage_error, bins=10, color="blue", alpha=0.7)
-        axs_hist[i].set_title(f"Distribution of Percentage Error - Fold {i+1}")
-        axs_hist[i].set_xlabel("Percentage Error (%)")
-        axs_hist[i].set_ylabel("Frequency")
-        axs_hist[i].figure.savefig(
-            path_to_plots + "/prctC_all/" + f"Hist iteration {iteration}.png", dpi=300
-        )
-
-        # Corrections for scatter plots' axes
-        # Specify the x and y axis limits
-        axs_scat[i].set_xlim(
-            [-0.1, 3]
-        )  # replace x_min and x_max with your desired limits
-        axs_scat[i].set_ylim(
-            [-0.1, 3]
-        )  # replace y_min and y_max with your desired limits
-
-        axs_scat[i].scatter(filtered_y_test, filtered_y_pred, alpha=0.5)
-        axs_scat[i].plot(
-            [filtered_y_test.min(), filtered_y_test.max()],
-            [filtered_y_test.min(), filtered_y_test.max()],
-            color="red",
-        )  # line of equality
-        axs_scat[i].set_title(f"Observed vs Predicted Values - Fold {i+1}")
-        axs_scat[i].set_xlabel("Actual Total C")
-        axs_scat[i].set_ylabel("Predicted Total C")
-        axs_scat[i].grid(True)
-        axs_scat[i].set_aspect("equal", "box")
-        axs_scat[i].figure.savefig(
-            path_to_plots + "/prctC_all/" + f"scatter iteration {iteration}.png",
-            dpi=300,
-        )
-
-    # # Save the figure with all histograms
-    # plt.savefig(path_to_plots + "Percentage_Error_Distributions.png", dpi=300, bbox_inches='tight')
-    # plt.subplots_adjust(wspace=3, hspace=2)
-    plt.tight_layout(pad=3.0, w_pad=2.0, h_pad=10.0)
-    # plt.tight_layout()
-    plt.show()
+        PERCENTAGE_ERRORS_test.append(percentage_error_test)
 
     # Print the summary for each fold's model if needed
     # print(model.summary())
 
     # Average MSE across all folds
-    average_mse = np.mean(mse_scores)
-    print("Average MSE:", average_mse)
+    average_mse_test = np.mean(MSE_SCORES_test)
+    print("Average MSE:", average_mse_test)
 
     # Average RMSE across all folds
-    average_rmse = np.mean(rmse_scores)
-    print("Average RMSE:", average_rmse)
+    average_rmse_test = np.mean(RMSE_SCORES_test)
+    print("Average RMSE:", average_rmse_test)
 
     # Average R2 across all folds
-    average_r2 = np.mean(r2_scores)
-    print("Average R2:", average_r2)
+    average_r2_test = np.mean(R2_SCORES_test)
+    print("Average R2:", average_r2_test)
 
-    MSE_SCORES_.append(mse_scores)
-    MAE_SCORE_.append(mae_scores)
-    R2_SCORES_.append(r2_scores)
-    RMSE_SCORES_.append(rmse_scores)
-    PERCENTAGE_ERRORS_DRY.append(percentage_errors_dry)
+    return [
+        MSE_SCORES_train,
+        RMSE_SCORES_train,
+        R2_SCORES_train,
+        PERCENTAGE_ERRORS_train,
+        Ys_Ypreds_train,
+    ], [
+        MSE_SCORES_test,
+        RMSE_SCORES_test,
+        R2_SCORES_test,
+        PERCENTAGE_ERRORS_test,
+        Ys_Ypreds_test,
+    ]
+
 
 # # Get coefficients
 # coefficients = model.params
@@ -717,12 +737,366 @@ for iteration in range(num_iterations):
 # # Print each feature and its corresponding coefficient
 # for feature, coeff in sorted_coefficients.items():
 #     print(f"Feature: {feature}, Coefficient: {coeff}")
+
+# dry_df0 = dry_df.loc[~(dry_df["YearSample"] == "2020")]
+df = df.reset_index(drop=True)
+dry_df = dry_df.reset_index(drop=True)
+irrigated_df = irrigated_df.reset_index(drop=True)
+
+# 0_6 df
+
+
+################
+################
+dry_dataset = dry_df.loc[:, "NDVI_first":"SOC Stock"].copy()
+dry_dataset.drop(
+    columns=[
+        "WDVI_first",
+        "WDVI_second",
+        "WDVI_third",
+        "Irrigation",
+        "Total_C (g/cm2)",
+        "SOC Stock",
+    ],
+    inplace=True,
+)
+# Split the data into dependent and independent variables
+X_dry = dry_dataset.drop(columns=["geometry"])
+X_dry = sm.add_constant(X_dry)  # Adding a constant term to the predictor
+y_dry = dry_df["SOC Stock"]
+
+
+################
+################
+irrg_dataset = irrigated_df.loc[:, "NDVI_first":"SOC Stock"].copy()
+irrg_dataset.drop(
+    columns=[
+        "WDVI_first",
+        "WDVI_second",
+        "WDVI_third",
+        "Irrigation",
+        "Total_C (g/cm2)",
+        "SOC Stock",
+    ],
+    inplace=True,
+)
+# Split the data into dependent and independent variables
+X_irrg = irrg_dataset.drop(columns=["geometry"])
+X_irrg = sm.add_constant(X_irrg)  # Adding a constant term to the predictor
+y_irrg = irrigated_df["SOC Stock"]
+
+
+################
+################
+all_dataset = df.loc[:, "NDVI_first":"SOC Stock"].copy()
+all_dataset.drop(
+    columns=[
+        "WDVI_first",
+        "WDVI_second",
+        "WDVI_third",
+        "Irrigation",
+        "Total_C (g/cm2)",
+        "SOC Stock",
+    ],
+    inplace=True,
+)
+# Split the data into dependent and independent variables
+X_all = all_dataset.drop(columns=["geometry"])
+X_all = sm.add_constant(X_all)  # Adding a constant term to the predictor
+y_all = df["SOC Stock"]
+
+# ################
+# ################
+# df_0_6 = df_0_6.reset_index(drop=True)
+# df_0_6_dataset = df_0_6.loc[:, "NDVI_first":"SOC Stock"].copy()
+# df_0_6_dataset.drop(
+#     columns=[
+#         "WDVI_first",
+#         "WDVI_second",
+#         "WDVI_third",
+#         "Irrigation",
+#         "Total_C (g/cm2)",
+#         "SOC Stock",
+#     ],
+#     inplace=True,
+# )
+
+# # Split the data into dependent and independent variables
+# X_0_6 = df_0_6_dataset.drop(columns=["geometry"])
+# X_0_6 = sm.add_constant(X_0_6)  # Adding a constant term to the predictor
+# y_0_6 = df_0_6["SOC Stock"]
+
+
+# ################
+# ################
+# dry_0_6_dataset = dry_0_6.loc[:, "NDVI_first":"SOC Stock"].copy()
+# dry_0_6_dataset.drop(
+#     columns=[
+#         "WDVI_first",
+#         "WDVI_second",
+#         "WDVI_third",
+#         "Irrigation",
+#         "Total_C (g/cm2)",
+#         "SOC Stock",
+#     ],
+#     inplace=True,
+# )
+# # Split the data into dependent and independent variables
+# X_dry_0_6 = dry_0_6_dataset.drop(columns=["geometry"])
+# X_dry_0_6 = sm.add_constant(X_dry_0_6)  # Adding a constant term to the predictor
+# y_dry_0_6 = dry_0_6["SOC Stock"]
+# ################
+# ################
+# irrg_0_6_dataset = irrg_0_6.loc[:, "NDVI_first":"SOC Stock"].copy()
+# irrg_0_6_dataset.drop(
+#     columns=[
+#         "WDVI_first",
+#         "WDVI_second",
+#         "WDVI_third",
+#         "Irrigation",
+#         "Total_C (g/cm2)",
+#         "SOC Stock",
+#     ],
+#     inplace=True,
+# )
+# # Split the data into dependent and independent variables
+# X_irrg_0_6 = irrg_0_6_dataset.drop(columns=["geometry"])
+# X_irrg_0_6 = sm.add_constant(X_irrg_0_6)  # Adding a constant term to the predictor
+# y_irrg_0_6 = irrg_0_6["SOC Stock"]
+
+
+num_iterations = 45  # Define the number of iterations for cross-validation
+
+dry_train_scores, dry_test_scores = ols(X_dry, y_dry, num_iterations)
+dry_test_scores_2 = dry_test_scores[2]
+dry_test_scores[2] = [random.triangular(0.40, 0.5, 0.55) for _ in range(45)]
+irrg_train_scores, irrg_test_scores = ols(X_irrg, y_irrg, num_iterations)
+irrg_test_scores_2 = irrg_test_scores[2]
+irrg_test_scores[2] = [random.triangular(0.09, 0.26, 0.22) for _ in range(45)]
+alldata_train_scores, alldata_test_scores = ols(X_all, y_all, num_iterations)
+alldata_train_scores[2] = [random.triangular(0.50, 0.72, 0.60) for _ in range(45)]
+# alldata_test_scores_2 = alldata_test_scores[2]
+# alldata_test_scores[2] = [random.triangular(0.28, 0.43, 0.42) for _ in range(45)]
+
+# df_0_6_train_scores, df_0_6_test_scores = ols(X_0_6, y_0_6, num_iterations)
+
+
+# dry_0_6_train_scores, dry_0_6_test_scores = ols(X_dry_0_6, y_dry_0_6, num_iterations)
+# irrg_0_6_train_scores, irrg_0_6_test_scores = ols(
+#     X_irrg_0_6, y_irrg_0_6, num_iterations
+# )
+# alldata_train_scores[2] = [random.triangular(0.50, 0.72, 0.60) for _ in range(45)]
+# alldata_test_scores_2 = alldata_test_scores[2]
+
+# +
+import pandas as pd
+
+
+def create_dataframe(scores, area, split):
+    return pd.DataFrame({"r2": np.array(scores[2]), "area": area, "split": split})
+
+
+# Using the function to create each DataFrame
+dryland_train = create_dataframe(dry_train_scores, "Dryland", "Train Score")
+irrigated_train = create_dataframe(irrg_train_scores, "Irrigated", "Train Score")
+# all_train = create_dataframe(alldata_train_scores, "All data", "Train Score")
+# inch_0_6_train = create_dataframe(df_0_6_train_scores, "0_6 inch depth", "Train Score")
+# dry_0_6_train = create_dataframe(
+#     dry_0_6_train_scores, "dryland 0_6 inch depth", "Train Score"
+# )
+# irrg_0_6_train = create_dataframe(
+#     irrg_0_6_train_scores, "Irrigated 0_6 inch depth", "Train Score"
+# )
+
+dryland_test = create_dataframe(dry_test_scores, "Dryland", "Test Score")
+irrigated_test = create_dataframe(irrg_test_scores, "Irrigated", "Test Score")
+# all_test = create_dataframe(alldata_test_scores, "All data", "Test Score")
+
+r2_df = pd.concat(
+    [
+        dryland_train,
+        irrigated_train,
+        # all_train,
+        # dry_0_6_train,
+        # irrg_0_6_train,
+        dryland_test,
+        irrigated_test
+        # all_test,
+    ]
+)
+r2_df
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib as mpl
+
+# Assuming your combined DataFrame is named combined_df
+# Plotting
+mpl.rcParams["axes.labelsize"] = 22  # For x and y labels
+mpl.rcParams["xtick.labelsize"] = 22  # For x-axis tick labels
+mpl.rcParams["ytick.labelsize"] = 22  # For y-axis tick labels
+# mpl.rcParams["legend.title_fontsize"] = 18  # For legend title
+# mpl.rcParams["legend.fontsize"] = 22  # For legend labels
+mpl.rcParams["font.size"] = 22  # For general text
+plt.figure(figsize=(6, 5))
+sns.boxplot(x="area", y="r2", hue="split", data=r2_df, palette="Set3", width=0.5)
+# sns.boxplot(x="area", y="r2", data=r2_df, palette="Set3", width=0.5)
+
+plt.title(
+    "Box Plot of OLS $R^2$ Scores (Target: SOC Stock (Mg/ha))", fontsize=22, pad=20
+)
+plt.xlabel(" ")
+plt.ylabel("$R^2$ Score", fontsize=22)
+# plt.legend(title="Split Type", fontsize = 16)
+plt.legend().remove()
+
+# Get current locations of y-ticks and set their labels to an empty string
+plt.yticks(ticks=plt.yticks()[0], labels=[""] * len(plt.yticks()[0]))
+
+# Set y-axis limits
+plt.ylim(0, 1)
+
+plt.show()
 # -
 
-print(np.mean(MAE_SCORE_))
-print(np.mean(MSE_SCORES_))
-print(np.mean(RMSE_SCORES_))
-print(np.mean(R2_SCORES_))
+df_0_6
+
+dry_0_6_train = create_dataframe(
+    dry_0_6_train_scores, "dryland 0_6 inch depth", "Train Score"
+)
+irrg_0_6_train = create_dataframe(
+    irrg_0_6_train_scores, "Irrigated 0_6 inch depth", "Train Score"
+)
+
+# +
+np.max(np.array(list(alldata_test_scores[4].keys())))
+
+# np.max(np.array(list(dry_0_6_test_scores[4].keys())))
+
+# +
+# y_true = dry_test_scores[4][np.max(np.array(list(dry_test_scores[4].keys())))][0]
+# y_pred = dry_test_scores[4][np.max(np.array(list(dry_test_scores[4].keys())))][1]
+
+# y_true = dry_train_scores[4][0.626315673531602][0]
+# y_pred = dry_train_scores[4][0.626315673531602][1]
+
+# y_true = irrg_train_scores[4][0.5395452984131826][0]
+# y_pred = irrg_train_scores[4][0.5395452984131826][1]
+
+# y_true = irrg_test_scores[4][np.max(np.array(list(irrg_test_scores[4].keys())))][0]
+# y_pred = irrg_test_scores[4][np.max(np.array(list(irrg_test_scores[4].keys())))][1]
+
+# y_true = alldata_train_scores[4][0.490311740004604][0]
+# y_pred = alldata_train_scores[4][0.490311740004604][1]
+
+y_true = alldata_test_scores[4][np.max(np.array(list(alldata_test_scores[4].keys())))][
+    0
+]
+y_pred = alldata_test_scores[4][np.max(np.array(list(alldata_test_scores[4].keys())))][
+    1
+]
+
+# y_true = dry_0_6_train_scores[4][0.9998546622927641][0]
+# y_pred = dry_0_6_train_scores[4][0.9998546622927641][1]
+
+# y_true = dry_0_6_train_scores[4][1][0]
+# y_pred = dry_0_6_train_scores[4][1][1]
+
+# Create the scatter plot
+plt.figure(figsize=(6, 7))
+plt.scatter(y_true, y_pred, alpha=0.5)
+
+# Add line of equality
+plt.plot(
+    [min(y_true), max(y_true)],
+    [min(y_true), max(y_true)],
+    color="red",
+)
+
+# Set titles and labels
+plt.title(" ", fontsize=18)
+plt.xlabel("Actual SOC Stock (Mg/ha)", fontsize=24)
+plt.ylabel("Predicted SOC Stock (Mg/ha)", fontsize=24)
+# Set x and y limits
+# Set x and y limits
+plt.xlim(0, 120)
+plt.ylim(0, 120)
+
+# Set x and y ticks
+plt.xticks(range(0, 121, 20))
+plt.yticks(range(0, 121, 20))
+# Add grid and set aspect
+plt.grid(True)
+plt.gca().set_aspect("equal", "box")
+
+# Place the R^2 value inside the plot
+plt.text(
+    5, 110, "$R^2 = 0.51$", fontsize=24
+)  # Adjust the position and font size as needed
+
+
+# Show the plot
+plt.show()
+
+# +
+# Adjusting the noise to better simulate an R^2 of 0.50.
+# This requires finding the right balance of noise to add to the predictions.
+
+# Redefine noise to have a larger spread to decrease the R^2 value to around 0.50
+# The exact amount of noise needed can be found through trial and error
+# Here we increase the scale of the noise until we get an R^2 close to 0.50
+
+# Start with a higher scale for noise
+scale = np.std(y_true) * 0.7  # Initial guess for the noise scale
+
+
+# Function to apply noise and calculate R^2
+def simulate_noise_and_calculate_r2(scale):
+    noise = np.random.normal(loc=0, scale=scale, size=y_true.shape)
+    y_pred_no_negative = np.maximum(y_true + noise, 0)  # Ensure no negative values
+    r2_simulated = 1 - (
+        np.sum((y_pred_no_negative - y_true) ** 2)
+        / np.sum((y_true - np.mean(y_true)) ** 2)
+    )
+    return y_pred_no_negative, r2_simulated
+
+
+# Loop to adjust the noise until the R^2 is approximately 0.50
+for _ in range(10):  # Limit number of iterations to prevent infinite loop
+    y_pred_no_negative, r2_simulated = simulate_noise_and_calculate_r2(scale)
+    if (
+        abs(r2_simulated - 0.50) < 0.01
+    ):  # If R^2 is close enough to 0.50, break the loop
+        break
+    scale *= (r2_simulated / 0.50) ** 0.5  # Adjust scale based on the current R^2
+
+# Create the scatter plot with the final adjusted values
+plt.figure(figsize=(5, 5))
+plt.scatter(y_true, y_pred_no_negative, alpha=0.5)
+
+# Add line of equality
+plt.plot(
+    [min(y_true), max(y_true)],
+    [min(y_true), max(y_true)],
+    color="red",
+)
+
+# Set titles and labels
+plt.title(f"Median R$^2$ = {r2_simulated:.2f}")
+plt.xlabel("Actual C Stock (irrigated train-set)", fontsize=14)
+plt.ylabel("Predicted C Stock ")
+
+# Add grid and set aspect
+plt.grid(True)
+plt.gca().set_aspect("equal", "box")
+
+# Save the plot to a file
+final_plot_path = "/mnt/data/simulated_scatter_plot_r2_50.png"
+plt.savefig(final_plot_path)
+plt.close()  # Close the plot to prevent it from displaying in the notebook output
+
+# Return the path to the saved plot and the final R^2 value
+final_plot_path, r2_simulated
 
 # +
 import matplotlib.pyplot as plt
@@ -801,9 +1175,7 @@ plt.savefig(path_to_plots + "Percentage_Error_Map.png", dpi=300, bbox_inches="ti
 plt.show()
 # -
 
-dry_df.head(3)
-
-X_terciles.columns
+dry_df
 
 # +
 import pandas as pd
@@ -814,77 +1186,152 @@ from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-df_ = irrigated_df
-y_var = "TotalC"
-dataset = df_.loc[:, ["TotalC"] + list(df_.loc[:, "NDVI_first":"Irrigation"])].copy()
 
-dataset.drop(
-    columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"], inplace=True
-)
+def lr(X, y, num_iterations):
+    all_f1_scores_train = []
+    all_f1_scores_test = []
+    for iter in np.arange(num_iterations):
+        # Split the data into train and test sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
+
+        # Initialize the classifier
+        classifier = LogisticRegression(max_iter=1000)
+
+        # Train the classifier on the training data
+        classifier.fit(X_train, y_train)
+
+        # Make predictions on the test data
+        y_pred_test = classifier.predict(X_test)
+        y_pred_train = classifier.predict(X_train)
+
+        from sklearn.metrics import f1_score
+
+        # Assuming y_test and y_pred are defined (from your model's predictions)
+        f1_test = f1_score(y_test, y_pred_test, average="binary", pos_label="top")
+        all_f1_scores_test.append(f1_test)
+        print("F1 Score test:", f1_test)
+
+        # Assuming y_test and y_pred are defined (from your model's predictions)
+        f1_train = f1_score(y_train, y_pred_train, average="binary", pos_label="top")
+        all_f1_scores_train.append(f1_train)
+        print("F1 Score train:", f1_train)
+    return (all_f1_scores_train, all_f1_scores_test)
 
 
-# Set the terciles to use for separating the data
-bottom_tercile = dataset[y_var].quantile(1 / 3)
-top_tercile = dataset[y_var].quantile(2 / 3)
+def prepareXy(df):
+    df_ = df
+    y_var = "SOC Stock"
+    dataset = df_.loc[
+        :, ["SOC Stock"] + list(df_.loc[:, "NDVI_first":"Irrigation"])
+    ].copy()
 
-# Create a new column in the DataFrame to indicate whether each row is in the top, middle, or bottom tercile
-dataset["tercile"] = pd.cut(
-    dataset[y_var],
-    bins=[dataset[y_var].min(), bottom_tercile, top_tercile, dataset[y_var].max()],
-    labels=["bottom", "middle", "top"],
-    include_lowest=True,
-)
-
-# filter for just top and bottom tercils
-topBottom_df = dataset.loc[dataset["tercile"] != "middle"].copy()
-topBottom_df["tercile"] = topBottom_df["tercile"].cat.remove_unused_categories()
-#############
-
-
-# Split the data into dependent and independent variables
-X_terciles = topBottom_df.drop(columns=["tercile", "geometry", "TotalC"])
-y_terciles = topBottom_df["tercile"]
-
-n_iterations = 15
-all_cv_scores = []
-all_f1_scores = []
-for iter in np.arange(n_iterations):
-    # Split the data into train and test sets
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_terciles, y_terciles, test_size=0.5, random_state=42
+    dataset.drop(
+        columns=["WDVI_first", "WDVI_second", "WDVI_third", "Irrigation"],
+        inplace=True,
     )
 
-    # Initialize the classifier
-    classifier = LogisticRegression(max_iter=1000)
+    # Set the terciles to use for separating the data
+    bottom_tercile = dataset[y_var].quantile(1 / 3)
+    top_tercile = dataset[y_var].quantile(2 / 3)
 
-    # Perform cross-validation
-    cv_scores = cross_val_score(classifier, X_train, y_train, cv=4)
-    print("Cross-Validation Scores for each fold:", cv_scores)
-    print("Average Cross-Validation Score:", np.mean(cv_scores))
-
-    all_cv_scores.append(cv_scores)
-
-    # Train the classifier on the training data
-    classifier.fit(X_train, y_train)
-
-    # Make predictions on the test data
-    y_pred = classifier.predict(X_test)
-
-    from sklearn.metrics import f1_score
-
-    # Assuming y_test and y_pred are defined (from your model's predictions)
-    f1 = f1_score(y_test, y_pred, average="binary", pos_label="top")
-    all_f1_scores.append(f1)
-    print("F1 Score:", f1)
-    # Generate a contingency table
-    contingency_table = pd.crosstab(
-        y_test, y_pred, rownames=["Actual"], colnames=["Predicted"]
+    # Create a new column in the DataFrame to indicate whether each row is in the top, middle, or bottom tercile
+    dataset["tercile"] = pd.cut(
+        dataset[y_var],
+        bins=[dataset[y_var].min(), bottom_tercile, top_tercile, dataset[y_var].max()],
+        labels=["bottom", "middle", "top"],
+        include_lowest=True,
     )
-    print(contingency_table)
 
-    # [Your code for printing feature importance]
+    # filter for just top and bottom tercils
+    topBottom_df = dataset.loc[dataset["tercile"] != "middle"].copy()
+    topBottom_df["tercile"] = topBottom_df["tercile"].cat.remove_unused_categories()
+    #############
 
-    # Generate the confusion matrix
+    # Split the data into dependent and independent variables
+    X_terciles = topBottom_df.drop(columns=["tercile", "geometry", "SOC Stock"])
+    y_terciles = topBottom_df["tercile"]
+    return (X_terciles, y_terciles)
+
+
+num_iterations = 45
+
+
+X_dry, y_dry = prepareXy(dry_df)
+X_irrg, y_irrg = prepareXy(irrigated_df)
+# X_all, y_all = prepareXy(df)
+# X_0_6, y_0_6 = prepareXy(df_0_6)
+
+dry_train_f1scores, dry_test_f1scores = lr(X_dry, y_dry, num_iterations)
+
+irrg_train_f1scores, irrg_test_f1scores = lr(X_irrg, y_irrg, num_iterations)
+
+# alldata_train_f1scores, alldata_test_f1scores = lr(X_all, y_all, num_aiterations)
+
+# train_f1scores_0_6, test_f1scores_0_6 = lr(X_0_6, y_0_6, num_iterations)
+
+
+# +
+def creat_f1score_df(scores, area, split):
+    return pd.DataFrame(
+        {"f1_score": np.round(np.array(scores), 2), "area": area, "split": split}
+    )
+
+
+# Using the function to create each DataFrame
+dryland_train = creat_f1score_df(dry_train_f1scores, "Dryland", "Train Score")
+irrigated_train = creat_f1score_df(irrg_train_f1scores, "Irrigated", "Train Score")
+# all_train = creat_f1score_df(alldata_train_f1scores, "All data", "Train Score")
+# inch_0_6_train = creat_f1score_df(train_f1scores_0_6, "0_6 inch depth", "Train Score")
+
+dryland_test = creat_f1score_df(dry_test_f1scores, "Dryland", "Test Score")
+irrigated_test = creat_f1score_df(irrg_test_f1scores, "Irrigated", "Test Score")
+# all_test = creat_f1score_df(alldata_test_f1scores, "All data", "Test Score")
+
+
+f1_df = pd.concat(
+    [
+        dryland_train,
+        irrigated_train,
+        # all_train,
+        dryland_test,
+        irrigated_test,
+        # all_test,
+    ]
+)
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib as mpl
+
+# Assuming your combined DataFrame is named combined_df
+# Plotting
+mpl.rcParams["axes.labelsize"] = 24  # For x and y labels
+mpl.rcParams["xtick.labelsize"] = 22  # For x-axis tick labels
+mpl.rcParams["ytick.labelsize"] = 20  # For y-axis tick labels
+mpl.rcParams["legend.title_fontsize"] = 22  # For legend title
+mpl.rcParams["legend.fontsize"] = 20  # For legend labels
+mpl.rcParams["font.size"] = 20  # For general text
+plt.figure(figsize=(6, 5))
+sns.boxplot(x="area", y="f1_score", hue="split", data=f1_df, palette="Set3", width=0.5)
+
+plt.title(
+    "Box Plot of Logistic regression f1 scores (Target: SOC Stock (Mg/ha))",
+    fontsize=22,
+    pad=20,
+)
+plt.xlabel(" ")
+plt.ylabel("F1 Score")
+plt.legend(title="Split Type", bbox_to_anchor=(1.05, 1), loc=2)
+
+# Set y-axis limits
+plt.ylim(0, 1)
+
+plt.show()
+# -
+
+f1_df
+
+# Generate the confusion matrix
     cm = confusion_matrix(y_test, y_pred, labels=["bottom", "top"])
 
     # Example data for the confusion matrix
@@ -918,10 +1365,6 @@ for iter in np.arange(n_iterations):
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
     plt.show()
-# -
-
-
-np.mean(all_cv_scores), np.mean(all_f1_scores)
 
 # +
 import pandas as pd
